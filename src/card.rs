@@ -1176,16 +1176,26 @@ mod tests {
 
     #[test]
     fn klondike_card_movements() {
-        //TODO: figure out how to do this
-        /*
-            let mut mover = TestCardMover::new(1, true);
-            let mut klondike = Klondike::new(&mut mover);
-            mover.origin = Some(&klondike.deck);
-            mover.destination = Some(&klondike.foundations[0]);
-            let res = klondike.move_cards(CardHolder::DECK, CardHolder::FOUNDATION(0), 1);
-            assert_eq!(res, true);
-            assert_eq!(mover.call_count, 1);
-        */
+        let mut piles = vec![Pile::new(), Pile::new(), Pile::new()];
+        let mut mover = TestCardMover::new(1, true);
+
+        unsafe {
+            let ptr = &mut piles as *mut Vec<Pile>;
+            let piles2 = &*ptr;
+            mover.origin = Some(&piles2[0]);
+            mover.destination = Some(&piles2[1]);
+        }
+
+        let mut klondike = Klondike {
+            foundations: Vec::new(),
+            piles,
+            deck:Deck::init(&Vec::new()),
+            mover :&mut mover
+        };
+
+        let res = klondike.move_cards(CardHolder::PILE(0), CardHolder::PILE(1), 1);
+        assert_eq!(res, true);
+        assert_eq!(mover.call_count, 1);
     }
 
     struct TestCardMover<'a, 'b> {
@@ -1204,18 +1214,12 @@ mod tests {
             number: usize,
         ) -> bool {
             self.call_count = self.call_count + 1;
-
             if let Some(expected) = self.origin {
-                assert_eq!(
-                    expected as *const dyn CardOrigin,
-                    origin as *const dyn CardOrigin
-                );
+                // convert pointer to text, as direct compare does not work :(
+                assert_eq!(format!("{:p}", origin), format!("{:p}", expected));
             }
             if let Some(expected) = self.destination {
-                assert_eq!(
-                    expected as *const dyn CardDestination,
-                    destination as *const dyn CardDestination
-                );
+                assert_eq!(format!("{:p}", destination), format!("{:p}", expected));
             }
             assert_eq!(self.card_number, number);
             self.to_return
