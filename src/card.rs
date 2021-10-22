@@ -1,4 +1,7 @@
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use std::fmt;
+use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq)]
@@ -70,14 +73,14 @@ pub trait CardOrigin {
     /// business logic for allowing this peek of cards. If everything
     /// is OK a vector containing the requested cards is returned, None
     /// otherwise.  
-    fn try_peek(&self, number: u32) -> Option<Vec<Card>>;
+    fn try_peek(&self, number: usize) -> Option<Vec<Card>>;
 
     /// Peek an arbitrary number of cards. It should check the
     /// business logic for allowing this peek of cards. If everything
     /// is OK a vector containing the requested cards is returned, An empty
     /// one otherwise. The returned cards should be removed from the Card
     /// Origin.
-    fn peek(&mut self, number: u32) -> Vec<Card>;
+    fn peek(&mut self, number: usize) -> Vec<Card>;
 }
 
 /// Anything where cards can be moved to
@@ -101,7 +104,7 @@ pub struct Deck {
 }
 
 impl CardOrigin for Deck {
-    fn peek(&mut self, number: u32) -> Vec<Card> {
+    fn peek(&mut self, number: usize) -> Vec<Card> {
         if number == 1 {
             match self.waste.pop() {
                 Some(card) => {
@@ -114,7 +117,7 @@ impl CardOrigin for Deck {
         return Vec::new();
     }
 
-    fn try_peek(&self, number: u32) -> Option<Vec<Card>> {
+    fn try_peek(&self, number: usize) -> Option<Vec<Card>> {
         if number == 1 && self.waste.len() > 0 {
             return Some(self.waste[self.waste.len() - 1..].to_vec());
         }
@@ -164,14 +167,14 @@ impl Pile {
 }
 
 impl CardOrigin for Pile {
-    fn try_peek(&self, number: u32) -> Option<Vec<Card>> {
+    fn try_peek(&self, number: usize) -> Option<Vec<Card>> {
         if number == 1 && !self.cards.is_empty() {
             return Some(self.cards[self.cards.len() - 1..].to_vec());
         }
         return None;
     }
 
-    fn peek(&mut self, number: u32) -> Vec<Card> {
+    fn peek(&mut self, number: usize) -> Vec<Card> {
         if number == 1 {
             match self.cards.pop() {
                 Some(card) => {
@@ -220,25 +223,22 @@ impl Foundation {
         }
     }
 
-    fn can_peek(&self, number: u32) -> bool {
-        number > 0 && (number as usize) <= self.visible.len()
+    fn can_peek(&self, number: usize) -> bool {
+        number > 0 && number <= self.visible.len()
     }
 }
 
 impl CardOrigin for Foundation {
-    fn try_peek(&self, number: u32) -> Option<Vec<Card>> {
+    fn try_peek(&self, number: usize) -> Option<Vec<Card>> {
         if self.can_peek(number) {
-            return Some(self.visible[self.visible.len() - (number as usize)..].to_vec());
+            return Some(self.visible[self.visible.len() - number..].to_vec());
         }
         return None;
     }
 
-    fn peek(&mut self, number: u32) -> Vec<Card> {
+    fn peek(&mut self, number: usize) -> Vec<Card> {
         if self.can_peek(number) {
-            let res: Vec<Card> = self
-                .visible
-                .drain(self.visible.len() - (number as usize)..)
-                .collect();
+            let res: Vec<Card> = self.visible.drain(self.visible.len() - number..).collect();
             if self.visible.is_empty() {
                 match self.hidden.pop() {
                     Some(card) => {
@@ -266,15 +266,15 @@ impl CardDestination for Foundation {
 
         let last_card = self.visible[self.visible.len() - 1];
 
-        ((cards[0].rank as i32) + 1) == (last_card.rank as i32) &&
-        match cards[0].suit {
-            CardSuit::DIAMONDS | CardSuit::HEARTS => { 
-                last_card.suit == CardSuit::CLUBS || last_card.suit == CardSuit::SPADES
+        ((cards[0].rank as i32) + 1) == (last_card.rank as i32)
+            && match cards[0].suit {
+                CardSuit::DIAMONDS | CardSuit::HEARTS => {
+                    last_card.suit == CardSuit::CLUBS || last_card.suit == CardSuit::SPADES
+                }
+                CardSuit::CLUBS | CardSuit::SPADES => {
+                    last_card.suit == CardSuit::DIAMONDS || last_card.suit == CardSuit::HEARTS
+                }
             }
-            CardSuit::CLUBS | CardSuit::SPADES => { 
-                last_card.suit == CardSuit::DIAMONDS || last_card.suit == CardSuit::HEARTS
-            }
-        }
     }
 
     fn poke(&mut self, cards: &Vec<Card>) {
@@ -284,6 +284,169 @@ impl CardDestination for Foundation {
     }
 }
 
+pub trait CardMover {
+    fn move_cards(
+        &mut self,
+        origin: &mut dyn CardOrigin,
+        destination: &mut dyn CardDestination,
+        number: usize,
+    ) -> bool {
+        if let Some(try_cards) = origin.try_peek(number) {
+            if destination.try_poke(&try_cards) {
+                destination.poke(&origin.peek(number));
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+pub struct SimpleCardMover;
+impl CardMover for SimpleCardMover {}
+
+pub enum CardHolder {
+    DECK,
+    PILE(u32),
+    FOUNDATION(u32),
+}
+
+pub struct Klondike<'a> {
+    deck: Deck,
+    piles: Vec<Pile>,
+    foundations: Vec<Foundation>,
+    mover: &'a mut (dyn CardMover + 'a),
+}
+
+impl<'a> Klondike<'a> {
+    pub fn new(mover: &'a mut dyn CardMover) -> Klondike<'a> {
+        let cards = Klondike::generate_randomized_card_deck();
+        let mut card_idx = 0;
+
+        let mut piles: Vec<Pile> = Vec::new();
+        for _i in 0..4 {
+            piles.push(Pile::new());
+        }
+
+        let mut foundations: Vec<Foundation> = Vec::new();
+
+        for i in 1..8 {
+            foundations.push(Foundation::new(cards[card_idx..card_idx + i].to_vec()));
+            card_idx += i;
+        }
+
+        Klondike {
+            piles,
+            foundations,
+            deck: Deck::init(&cards[card_idx..].to_vec()),
+            mover,
+        }
+    }
+
+    fn generate_randomized_card_deck() -> Vec<Card> {
+        let mut cards: Vec<Card> = Vec::new();
+        for suit in CardSuit::iter() {
+            for rank in CardRank::iter() {
+                cards.push(Card {
+                    rank: rank,
+                    suit: suit,
+                });
+            }
+        }
+        let mut rng = thread_rng();
+        cards.shuffle(&mut rng);
+        return cards;
+    }
+
+    pub fn move_cards(&mut self, origin: CardHolder, destination: CardHolder, number: u32) -> bool {
+        match destination {
+            CardHolder::FOUNDATION(dest_idx) => match origin {
+                CardHolder::FOUNDATION(origin_idx) => {
+                    let elements = self.foundations.len() as u32;
+                    if origin_idx == dest_idx || elements < origin_idx || elements < dest_idx {
+                        return false;
+                    }
+                    let (origin, destination) = extract_two_mutable_elements(
+                        &mut self.foundations,
+                        origin_idx as usize,
+                        dest_idx as usize,
+                    );
+
+                    return self.mover.move_cards(origin, destination, number as usize);
+                }
+                CardHolder::PILE(origin_idx) => {
+                    return self.mover.move_cards(
+                        &mut self.piles[origin_idx as usize],
+                        &mut self.foundations[dest_idx as usize],
+                        number as usize,
+                    );
+                }
+                CardHolder::DECK => {
+                    return self.mover.move_cards(
+                        &mut self.deck,
+                        &mut self.foundations[dest_idx as usize],
+                        number as usize,
+                    );
+                }
+            },
+            CardHolder::PILE(dest_idx) => match origin {
+                CardHolder::FOUNDATION(origin_idx) => {
+                    return self.mover.move_cards(
+                        &mut self.foundations[origin_idx as usize],
+                        &mut self.piles[dest_idx as usize],
+                        number as usize,
+                    );
+                }
+                CardHolder::PILE(origin_idx) => {
+                    let elements = self.piles.len() as u32;
+                    if origin_idx == dest_idx || elements < origin_idx || elements < dest_idx {
+                        return false;
+                    }
+                    let (origin, destination) = extract_two_mutable_elements(
+                        &mut self.piles,
+                        origin_idx as usize,
+                        dest_idx as usize,
+                    );
+                    return self.mover.move_cards(origin, destination, number as usize);
+                }
+                CardHolder::DECK => {
+                    return self.mover.move_cards(
+                        &mut self.deck,
+                        &mut self.piles[dest_idx as usize],
+                        number as usize,
+                    );
+                }
+            },
+            CardHolder::DECK => {
+                return false;
+            }
+        }
+    }
+}
+
+pub fn extract_two_mutable_elements<T>(
+    vector: &mut Vec<T>,
+    first_idx: usize,
+    second_idx: usize,
+) -> (&mut T, &mut T) {
+    if first_idx < second_idx {
+        let (first_vector, second_vector) = vector.split_at_mut(first_idx + 1);
+        return (
+            &mut first_vector[first_idx],
+            &mut second_vector[second_idx - first_idx - 1],
+        );
+    }
+
+    if first_idx > second_idx {
+        let (first_vector, second_vector) = vector.split_at_mut(second_idx + 1);
+        return (
+            &mut second_vector[first_idx - second_idx - 1],
+            &mut first_vector[second_idx],
+        );
+    }
+
+    panic!("indexes cannot be equal");
+}
 
 #[cfg(test)]
 mod tests {
@@ -715,11 +878,11 @@ mod tests {
         let mut found = create_test_foundation(hidden, 0, visible);
 
         assert_eq!(
-            found.try_peek(peek as u32),
+            found.try_peek(peek),
             Some(generate_descending_alt_color_starting(visible - peek, peek))
         );
         assert_eq!(
-            found.peek(peek as u32),
+            found.peek(peek),
             generate_descending_alt_color_starting(visible - peek, peek)
         );
         assert_eq!(found.hidden.len(), remaining_hidden);
@@ -828,7 +991,7 @@ mod tests {
     fn foundation_poke_ko() {
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::DIAMONDS,
                 rank: CardRank::SIX,
@@ -836,7 +999,7 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::HEARTS,
                 rank: CardRank::SIX,
@@ -844,7 +1007,7 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::CLUBS,
                 rank: CardRank::NINE,
@@ -852,7 +1015,7 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::SPADES,
                 rank: CardRank::NINE,
@@ -860,7 +1023,7 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            5,
+            5, //last card is 9 DIAMONDS
             vec![Card {
                 suit: CardSuit::CLUBS,
                 rank: CardRank::SIX,
@@ -868,7 +1031,7 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::SPADES,
                 rank: CardRank::SIX,
@@ -876,7 +1039,7 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::HEARTS,
                 rank: CardRank::EIGHT,
@@ -884,7 +1047,7 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::DIAMONDS,
                 rank: CardRank::EIGHT,
@@ -892,13 +1055,12 @@ mod tests {
         );
         foundation_poke_case_ko(
             0,
-            4,
+            4, //last card is 10 CLUBS
             vec![Card {
                 suit: CardSuit::DIAMONDS,
                 rank: CardRank::FIVE,
             }],
         );
-
     }
 
     fn foundation_poke_case_ko(visible_start: usize, visible_size: usize, to_add: Vec<Card>) {
@@ -909,5 +1071,245 @@ mod tests {
             foun.visible,
             generate_descending_alt_color_starting(visible_start, visible_size)
         );
+    }
+
+    #[test]
+    fn klondike_new() {
+        let mut mover = SimpleCardMover {};
+        let mut klondike = Klondike::new(&mut mover);
+        // Four empty piles
+        assert_eq!(klondike.piles.len(), 4);
+        for pile in klondike.piles {
+            assert_eq!(pile.try_peek(1), None);
+        }
+
+        // Seven foundations: the first one with one card, the second one with two ...
+        assert_eq!(klondike.foundations.len(), 7);
+        for i in 0..7 {
+            assert_eq!(
+                get_card_origin_number_of_cards(&mut klondike.foundations[i]),
+                i as u32 + 1
+            );
+        }
+
+        // The remaining cards are on the deck
+        assert_eq!(get_deck_number_of_cards(&mut klondike.deck), 24); // 52 - 1 - 2 - 3 - 4 - 5 - 6 - 7
+
+        //TODO: check cards not repeated and randomized (if possible)
+    }
+    fn get_card_origin_number_of_cards(origin: &mut dyn CardOrigin) -> u32 {
+        let mut count = 0;
+        while origin.peek(1).len() == 1 {
+            count = count + 1;
+        }
+        return count;
+    }
+
+    fn get_deck_number_of_cards(deck: &mut Deck) -> u32 {
+        let mut count = 0;
+        while deck.peek(1).len() == 1 {
+            count = count + 1;
+            deck.take();
+        }
+        return count;
+    }
+
+    #[test]
+    fn klondike_impossible_card_movements() {
+        let mut mover = SimpleCardMover {};
+        let mut klondike = Klondike::new(&mut mover);
+        // Can't move cards to the deck
+        assert_eq!(
+            klondike.move_cards(CardHolder::DECK, CardHolder::DECK, 1),
+            false
+        );
+        assert_eq!(
+            klondike.move_cards(CardHolder::FOUNDATION(1), CardHolder::DECK, 1),
+            false
+        );
+        assert_eq!(
+            klondike.move_cards(CardHolder::PILE(0), CardHolder::DECK, 1),
+            false
+        );
+
+        // Can't move more than one card to the pile
+        assert_eq!(
+            klondike.move_cards(CardHolder::FOUNDATION(1), CardHolder::PILE(0), 2),
+            false
+        );
+
+        // Can't move more than one card from the pile
+        assert_eq!(
+            klondike.move_cards(CardHolder::FOUNDATION(1), CardHolder::PILE(0), 2),
+            false
+        );
+    }
+
+    #[test]
+    fn test_extract_two_mutables() {
+        test_extract_two_mutables_case(0,1);
+        test_extract_two_mutables_case(1,0);
+        test_extract_two_mutables_case(2,3);
+        test_extract_two_mutables_case(3,2);
+        test_extract_two_mutables_case(4,7);
+        test_extract_two_mutables_case(7,4);
+        test_extract_two_mutables_case(7,9);
+        test_extract_two_mutables_case(9,7);
+        test_extract_two_mutables_case(8,9);
+        test_extract_two_mutables_case(9,8);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_extract_two_mutables_same() {
+        test_extract_two_mutables_case(5,5);
+    }
+
+    fn test_extract_two_mutables_case(first:u32, second: u32) {
+        let mut vec_test = vec![0,1,2,3,4,5,6,7,8,9];
+
+        let (a, b) = extract_two_mutable_elements(&mut vec_test, first as usize, second as usize);
+
+        assert_eq!(*a, first);
+        assert_eq!(*b, second);
+    }
+
+    #[test]
+    fn klondike_card_movements() {
+        //TODO: figure out how to do this
+        /*
+            let mut mover = TestCardMover::new(1, true);
+            let mut klondike = Klondike::new(&mut mover);
+            mover.origin = Some(&klondike.deck);
+            mover.destination = Some(&klondike.foundations[0]);
+            let res = klondike.move_cards(CardHolder::DECK, CardHolder::FOUNDATION(0), 1);
+            assert_eq!(res, true);
+            assert_eq!(mover.call_count, 1);
+        */
+    }
+
+    struct TestCardMover<'a, 'b> {
+        origin: Option<&'a (dyn CardOrigin + 'a)>,
+        destination: Option<&'b (dyn CardDestination + 'b)>,
+        card_number: usize,
+        to_return: bool,
+        call_count: u32,
+    }
+
+    impl<'a, 'b> CardMover for TestCardMover<'a, 'b> {
+        fn move_cards(
+            &mut self,
+            origin: &mut dyn CardOrigin,
+            destination: &mut dyn CardDestination,
+            number: usize,
+        ) -> bool {
+            self.call_count = self.call_count + 1;
+
+            if let Some(expected) = self.origin {
+                assert_eq!(
+                    expected as *const dyn CardOrigin,
+                    origin as *const dyn CardOrigin
+                );
+            }
+            if let Some(expected) = self.destination {
+                assert_eq!(
+                    expected as *const dyn CardDestination,
+                    destination as *const dyn CardDestination
+                );
+            }
+            assert_eq!(self.card_number, number);
+            self.to_return
+        }
+    }
+
+    impl<'a, 'b> TestCardMover<'a, 'b> {
+        pub fn new(card_number: usize, to_return: bool) -> TestCardMover<'a, 'b> {
+            TestCardMover {
+                origin: None,
+                destination: None,
+                card_number,
+                to_return,
+                call_count: 0,
+            }
+        }
+    }
+
+    struct TestCardOrigin {
+        to_return: Option<Vec<Card>>,
+        peek_parameters: Vec<usize>,
+    }
+
+    impl CardOrigin for TestCardOrigin {
+        fn try_peek(&self, number: usize) -> Option<Vec<Card>> {
+            if let Some(cards) = &self.to_return {
+                if number <= cards.len() {
+                    return Some(cards[..number].to_vec());
+                }
+            }
+            None
+        }
+
+        fn peek(&mut self, number: usize) -> Vec<Card> {
+            self.peek_parameters.push(number);
+            self.try_peek(number).unwrap_or(Vec::new())
+        }
+    }
+
+    struct TestCardDestination {
+        to_return: bool,
+        poke_parameters: Vec<Vec<Card>>,
+    }
+
+    impl CardDestination for TestCardDestination {
+        fn try_poke(&self, _cards: &Vec<Card>) -> bool {
+            self.to_return
+        }
+
+        fn poke(&mut self, cards: &Vec<Card>) {
+            self.poke_parameters.push(cards.to_vec());
+        }
+    }
+
+    #[test]
+    fn card_mover() {
+        for i in 1..5 {
+            card_mover_check(false, false, i, false);
+            card_mover_check(false, true, i, false);
+            card_mover_check(true, false, i, false);
+            card_mover_check(true, true, i, true);
+        }
+    }
+
+    fn card_mover_check(ret_peek: bool, ret_poke: bool, number: usize, expected: bool) {
+        let mut mover = SimpleCardMover {};
+        let num_calls = match expected {
+            true => 1,
+            false => 0,
+        };
+
+        let mut origin = TestCardOrigin {
+            to_return: match ret_peek {
+                true => Some(generate_random_card_set(number)),
+                false => None,
+            },
+            peek_parameters: Vec::new(),
+        };
+        let mut destination = TestCardDestination {
+            to_return: ret_poke,
+            poke_parameters: Vec::new(),
+        };
+
+        let result = mover.move_cards(&mut origin, &mut destination, number);
+
+        assert_eq!(result, expected);
+        assert_eq!(origin.peek_parameters.len(), num_calls);
+        assert_eq!(destination.poke_parameters.len(), num_calls);
+
+        if expected {
+            assert_eq!(origin.peek_parameters[0], number);
+            if let Some(cards) = origin.to_return {
+                assert_eq!(destination.poke_parameters[0], cards);
+            }
+        }
     }
 }
