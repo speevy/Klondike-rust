@@ -103,6 +103,14 @@ pub struct Deck {
     waste: Vec<Card>,
 }
 
+/// Value object used by UI for representing the status of a Deck
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct DeckStatus {
+    pub cards_on_waste: u32,
+    pub cards_on_stok: u32,
+    pub top_card_on_waste: Option<Card>
+}
+
 impl CardOrigin for Deck {
     fn peek(&mut self, number: usize) -> Vec<Card> {
         if number == 1 {
@@ -154,15 +162,46 @@ impl Deck {
             None => {}
         }
     }
+
+    pub fn get_status(&self) -> DeckStatus {
+        let mut top_card_on_waste = None;
+        if !self.waste.is_empty() {
+            top_card_on_waste = Some(self.waste[self.waste.len() - 1]);
+        }
+
+        DeckStatus {
+            cards_on_waste: self.waste.len() as u32,
+            cards_on_stok: self.stock.len() as u32,
+            top_card_on_waste
+        }
+    }
 }
 
 pub struct Pile {
     cards: Vec<Card>,
 }
 
+/// Value object used by UI for representing the status of a Pile
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PileStatus {
+    pub top_card: Option<Card>,
+    pub num_cards: u32
+}
+
 impl Pile {
     pub fn new() -> Pile {
         Pile { cards: vec![] }
+    }
+
+    pub fn get_status(&self) -> PileStatus {
+        let mut top_card = None;
+        if !self.cards.is_empty() {
+            top_card = Some(self.cards[self.cards.len() - 1]);
+        }
+
+        PileStatus {
+            top_card, num_cards: self.cards.len() as u32
+        }
     }
 }
 
@@ -215,6 +254,13 @@ pub struct Foundation {
     visible: Vec<Card>,
 }
 
+/// Value object used by UI for representing the status of a Fountain
+#[derive(Debug, Clone, PartialEq)]
+pub struct FoundationStatus {
+    pub num_hidden: u32,
+    pub visible: Vec<Card>
+}
+
 impl Foundation {
     pub fn new(cards: Vec<Card>) -> Foundation {
         Foundation {
@@ -225,6 +271,13 @@ impl Foundation {
 
     fn can_peek(&self, number: usize) -> bool {
         number > 0 && number <= self.visible.len()
+    }
+
+    pub fn get_status(&self) -> FoundationStatus {
+        FoundationStatus { 
+            num_hidden: self.hidden.len() as u32,
+            visible: self.visible[..].to_vec()
+        }
     }
 }
 
@@ -316,6 +369,12 @@ pub struct Klondike<'a> {
     piles: Vec<Pile>,
     foundations: Vec<Foundation>,
     mover: &'a mut (dyn CardMover + 'a),
+}
+
+pub struct KlondikeStatus {
+    pub deck: DeckStatus,
+    pub piles: Vec<PileStatus>,
+    pub foundations: Vec<FoundationStatus>
 }
 
 impl<'a> Klondike<'a> {
@@ -435,6 +494,16 @@ impl<'a> Klondike<'a> {
 
     pub fn take(&mut self) {
         (*(self.deck)).take();
+    }
+
+    pub fn get_status(&self) -> KlondikeStatus {
+        KlondikeStatus {
+            deck: self.deck.get_status(),
+            piles: self.piles.iter()
+                .map(|x| -> PileStatus {return x.get_status();}).collect(),
+            foundations: self.foundations.iter()
+                .map(|x| -> FoundationStatus {return x.get_status();}).collect()
+        }
     }
 }
 
@@ -663,6 +732,52 @@ mod tests {
     }
 
     #[test]
+    fn deck_satus() {
+        let mut deck = create_test_deck();
+        let status = deck.get_status();
+        assert_eq!(status.cards_on_stok, 3);
+        assert_eq!(status.cards_on_waste, 3);
+        assert_eq!(status.top_card_on_waste, Some(Card {
+            suit: CardSuit::CLUBS,
+            rank: CardRank::THREE,
+        }));
+
+        deck.waste.pop();
+
+        let status = deck.get_status();
+        assert_eq!(status.cards_on_stok, 3);
+        assert_eq!(status.cards_on_waste, 2);
+        assert_eq!(status.top_card_on_waste, Some(Card {
+            suit: CardSuit::CLUBS,
+            rank: CardRank::TWO,
+        }));
+
+        deck.waste.clear();
+
+        let status = deck.get_status();
+        assert_eq!(status.cards_on_stok, 3);
+        assert_eq!(status.cards_on_waste, 0);
+        assert_eq!(status.top_card_on_waste, None);
+
+        deck.stock.clear();
+
+        let status = deck.get_status();
+        assert_eq!(status.cards_on_stok, 0);
+        assert_eq!(status.cards_on_waste, 0);
+        assert_eq!(status.top_card_on_waste, None);
+
+        let mut deck = create_test_deck();
+        deck.stock.clear();
+        let status = deck.get_status();
+        assert_eq!(status.cards_on_stok, 0);
+        assert_eq!(status.cards_on_waste, 3);
+        assert_eq!(status.top_card_on_waste, Some(Card {
+            suit: CardSuit::CLUBS,
+            rank: CardRank::THREE,
+        }));
+
+    }
+    #[test]
     fn pile_new() {
         let pile = Pile::new();
         assert_eq!(pile.cards.is_empty(), true);
@@ -801,6 +916,32 @@ mod tests {
         if try_result {
             assert_eq!(pile.cards[size - 1], card);
         }
+    }
+
+    #[test]
+    fn pile_status() {
+        let mut pile = create_test_pile();
+        let status = pile.get_status();
+        assert_eq!(status.num_cards, 3);
+        assert_eq!(status.top_card,
+            Some(Card {
+                suit: CardSuit::DIAMONDS,
+                rank: CardRank::THREE,
+            }));
+
+        pile.cards.pop();
+        let status = pile.get_status();
+        assert_eq!(status.num_cards, 2);
+        assert_eq!(status.top_card,
+            Some(Card {
+                suit: CardSuit::DIAMONDS,
+                rank: CardRank::TWO,
+            }));
+
+        pile.cards.clear();
+        let status = pile.get_status();
+        assert_eq!(status.num_cards, 0);
+        assert_eq!(status.top_card, None);
     }
 
     #[test]
@@ -1085,6 +1226,29 @@ mod tests {
             foun.visible,
             generate_descending_alt_color_starting(visible_start, visible_size)
         );
+    }
+
+    #[test]
+    fn foundation_status() {
+        let mut foun = create_test_foundation(5, 0, 2);
+        let status = foun.get_status();
+        assert_eq!(status.num_hidden, 5);
+        assert_eq!(status.visible.len(), 2);
+
+        foun.hidden.clear();
+        let status = foun.get_status();
+        assert_eq!(status.num_hidden, 0);
+        assert_eq!(status.visible.len(), 2);
+
+        foun.visible.pop();
+        let status = foun.get_status();
+        assert_eq!(status.num_hidden, 0);
+        assert_eq!(status.visible.len(), 1);
+
+        foun.visible.clear();
+        let status = foun.get_status();
+        assert_eq!(status.num_hidden, 0);
+        assert_eq!(status.visible.len(), 0);
     }
 
     #[test]
@@ -1434,6 +1598,28 @@ mod tests {
             if let Some(cards) = origin.to_return {
                 assert_eq!(destination.poke_parameters[0], cards);
             }
+        }
+    }
+
+    #[test]
+    fn check_klondike_status() {
+        let mut mover = SimpleCardMover {};
+        let klondike = Klondike::new(&mut mover);
+        let status = klondike.get_status();
+        assert_eq!(status.deck, klondike.deck.get_status());
+
+        for i in 0..klondike.foundations.len() {
+            assert_eq!(
+                status.foundations[i], 
+                klondike.foundations[i].get_status()
+            );
+        }
+
+        for i in 0..klondike.piles.len() {
+            assert_eq!(
+                status.piles[i], 
+                klondike.piles[i].get_status()
+            );
         }
     }
 }
