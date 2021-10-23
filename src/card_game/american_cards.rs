@@ -36,7 +36,7 @@ pub struct Card {
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let str = format!(
-            "{}{}",
+            "{:>2}{}",
             match self.rank {
                 CardRank::ACE => "A",
                 CardRank::TWO => "2",

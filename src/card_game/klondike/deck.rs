@@ -11,7 +11,7 @@ pub struct Deck {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct DeckStatus {
     pub cards_on_waste: u32,
-    pub cards_on_stok: u32,
+    pub cards_on_stock: u32,
     pub top_card_on_waste: Option<Card>
 }
 
@@ -75,7 +75,7 @@ impl Deck {
 
         DeckStatus {
             cards_on_waste: self.waste.len() as u32,
-            cards_on_stok: self.stock.len() as u32,
+            cards_on_stock: self.stock.len() as u32,
             top_card_on_waste
         }
     }
@@ -267,7 +267,7 @@ mod tests {
     fn deck_satus() {
         let mut deck = create_test_deck();
         let status = deck.get_status();
-        assert_eq!(status.cards_on_stok, 3);
+        assert_eq!(status.cards_on_stock, 3);
         assert_eq!(status.cards_on_waste, 3);
         assert_eq!(status.top_card_on_waste, Some(Card {
             suit: CardSuit::CLUBS,
@@ -277,7 +277,7 @@ mod tests {
         deck.waste.pop();
 
         let status = deck.get_status();
-        assert_eq!(status.cards_on_stok, 3);
+        assert_eq!(status.cards_on_stock, 3);
         assert_eq!(status.cards_on_waste, 2);
         assert_eq!(status.top_card_on_waste, Some(Card {
             suit: CardSuit::CLUBS,
@@ -287,21 +287,21 @@ mod tests {
         deck.waste.clear();
 
         let status = deck.get_status();
-        assert_eq!(status.cards_on_stok, 3);
+        assert_eq!(status.cards_on_stock, 3);
         assert_eq!(status.cards_on_waste, 0);
         assert_eq!(status.top_card_on_waste, None);
 
         deck.stock.clear();
 
         let status = deck.get_status();
-        assert_eq!(status.cards_on_stok, 0);
+        assert_eq!(status.cards_on_stock, 0);
         assert_eq!(status.cards_on_waste, 0);
         assert_eq!(status.top_card_on_waste, None);
 
         let mut deck = create_test_deck();
         deck.stock.clear();
         let status = deck.get_status();
-        assert_eq!(status.cards_on_stok, 0);
+        assert_eq!(status.cards_on_stock, 0);
         assert_eq!(status.cards_on_waste, 3);
         assert_eq!(status.top_card_on_waste, Some(Card {
             suit: CardSuit::CLUBS,
