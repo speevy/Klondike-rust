@@ -1,5 +1,6 @@
 use strum_macros::EnumIter;
 use std::fmt;
+use ansi_term::Colour::*;
 
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq)]
 pub enum CardSuit {
@@ -34,8 +35,7 @@ pub struct Card {
 
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
+        let str = format!(
             "{}{}",
             match self.rank {
                 CardRank::ACE => "A",
@@ -58,6 +58,12 @@ impl fmt::Display for Card {
                 CardSuit::HEARTS => "♥",
                 CardSuit::SPADES => "♤",
             }
-        )
+        );
+
+        let colored = match self.suit {
+            CardSuit::DIAMONDS | CardSuit::HEARTS => Red.paint(str),
+            CardSuit::SPADES | CardSuit::CLUBS =>  Blue.paint(str),
+        };
+        write!(f, "{}", colored)
     }
 }
