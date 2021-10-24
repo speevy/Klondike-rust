@@ -18,11 +18,20 @@ pub enum CardHolder {
     FOUNDATION(u32),
 }
 
-pub struct Klondike<'a> {
+pub struct KlondikeMockable<T: CardMover> {
     deck: Box<Deck>,
     piles: Vec<Pile>,
     foundations: Vec<Foundation>,
-    mover: &'a mut (dyn CardMover + 'a),
+    mover: T,
+}
+
+pub type Klondike = KlondikeMockable<SimpleCardMover>;
+
+impl Klondike {
+    pub fn new() -> Self {
+        let mover = SimpleCardMover {};
+        KlondikeMockable::new_with_mover(mover)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,9 +41,10 @@ pub struct KlondikeStatus {
     pub foundations: Vec<FoundationStatus>
 }
 
-impl<'a> Klondike<'a> {
-    pub fn new(mover: &'a mut dyn CardMover) -> Klondike<'a> {
-        let cards = Klondike::generate_randomized_card_deck();
+impl<T: CardMover> KlondikeMockable<T> {
+
+    fn new_with_mover(mover: T) -> Self {
+        let cards = KlondikeMockable::<T>::generate_randomized_card_deck();
         let mut card_idx = 0;
 
         let mut piles: Vec<Pile> = Vec::new();
@@ -49,7 +59,7 @@ impl<'a> Klondike<'a> {
             card_idx += i;
         }
 
-        Klondike {
+        KlondikeMockable {
             piles,
             foundations,
             deck: Box::new(Deck::init(&cards[card_idx..].to_vec())),
@@ -203,8 +213,7 @@ mod tests {
 
     #[test]
     fn klondike_new() {
-        let mut mover = SimpleCardMover {};
-        let mut klondike = Klondike::new(&mut mover);
+        let mut klondike = Klondike::new();
         // Four empty piles
         assert_eq!(klondike.piles.len(), 4);
         for pile in klondike.piles {
@@ -244,8 +253,7 @@ mod tests {
 
     #[test]
     fn klondike_impossible_card_movements() {
-        let mut mover = SimpleCardMover {};
-        let mut klondike = Klondike::new(&mut mover);
+        let mut klondike = Klondike::new();
         // Can't move cards to the deck
         assert_eq!(
             klondike.move_cards(CardHolder::DECK, CardHolder::DECK, 1),
@@ -418,18 +426,16 @@ mod tests {
         number: u32,
         result: bool,
     ) {
-        let mut mover = TestCardMover::new(number as usize, result, origin_str, destination_str);
-
-        let mut klondike = Klondike {
+        let mut klondike = KlondikeMockable {
             foundations,
             piles,
             deck,
-            mover: &mut mover,
+            mover: TestCardMover::new(number as usize, result, origin_str, destination_str),
         };
 
         let res = klondike.move_cards(origin, destination, number);
         assert_eq!(res, result);
-        assert_eq!(mover.call_count, 1);
+        assert_eq!(klondike.mover.call_count, 1);
     }
 
     struct TestCardMover {
@@ -475,8 +481,7 @@ mod tests {
 
     #[test]
     fn check_klondike_status() {
-        let mut mover = SimpleCardMover {};
-        let klondike = Klondike::new(&mut mover);
+        let klondike = Klondike::new();
         let status = klondike.get_status();
         assert_eq!(status.deck, klondike.deck.get_status());
 

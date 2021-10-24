@@ -2,13 +2,11 @@ pub mod card_game;
 
 use card_game::american_cards::*;
 use card_game::klondike::*;
-use card_game::card_containers::SimpleCardMover;
 use std::io::{self, BufRead};
 use ansi_term::Style;
 
 fn main() {
-    let mut mover = SimpleCardMover {};
-    let mut klondike = Klondike::new(&mut mover);
+    let mut klondike = Klondike::new();
 
     let stdin = io::stdin();
     let mut iterator = stdin.lock().lines();
