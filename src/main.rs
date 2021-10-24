@@ -1,14 +1,13 @@
 pub mod card_game;
 
 use card_game::american_cards::*;
+use card_game::card_containers::CardMover;
 use card_game::klondike::*;
-use card_game::card_containers::SimpleCardMover;
 use std::io::{self, BufRead};
 use ansi_term::Style;
 
 fn main() {
-    let mut mover = SimpleCardMover {};
-    let mut klondike = Klondike::new(&mut mover);
+    let mut klondike = card_game::klondike::new();
 
     let stdin = io::stdin();
     let mut iterator = stdin.lock().lines();
@@ -64,7 +63,7 @@ fn get_card_holder (str: Option<&str>) -> Option<CardHolder> {
     }
 }
 
-fn print_status (klondike: &Klondike) {
+fn print_status<T:CardMover> (klondike: &Klondike<T>) {
     let status = klondike.get_status();
 
     println!("  P1    P2    P3    P4          D"); 
