@@ -18,11 +18,20 @@ pub enum CardHolder {
     FOUNDATION(u32),
 }
 
-pub struct Klondike<T: CardMover> {
+pub struct KlondikeMockable<T: CardMover> {
     deck: Box<Deck>,
     piles: Vec<Pile>,
     foundations: Vec<Foundation>,
     mover: T,
+}
+
+pub type Klondike = KlondikeMockable<SimpleCardMover>;
+
+impl Klondike {
+    pub fn new() -> Self {
+        let mover = SimpleCardMover {};
+        KlondikeMockable::new_with_mover(mover)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,15 +41,10 @@ pub struct KlondikeStatus {
     pub foundations: Vec<FoundationStatus>
 }
 
-pub fn new() -> Klondike<SimpleCardMover> {
-    let mover = SimpleCardMover {};
-    Klondike::new_with_mover(mover)
-}
-
-impl<T: CardMover> Klondike<T> {
+impl<T: CardMover> KlondikeMockable<T> {
 
     fn new_with_mover(mover: T) -> Self {
-        let cards = Klondike::<T>::generate_randomized_card_deck();
+        let cards = KlondikeMockable::<T>::generate_randomized_card_deck();
         let mut card_idx = 0;
 
         let mut piles: Vec<Pile> = Vec::new();
@@ -55,7 +59,7 @@ impl<T: CardMover> Klondike<T> {
             card_idx += i;
         }
 
-        Klondike {
+        KlondikeMockable {
             piles,
             foundations,
             deck: Box::new(Deck::init(&cards[card_idx..].to_vec())),
@@ -209,7 +213,7 @@ mod tests {
 
     #[test]
     fn klondike_new() {
-        let mut klondike = new();
+        let mut klondike = Klondike::new();
         // Four empty piles
         assert_eq!(klondike.piles.len(), 4);
         for pile in klondike.piles {
@@ -249,7 +253,7 @@ mod tests {
 
     #[test]
     fn klondike_impossible_card_movements() {
-        let mut klondike = new();
+        let mut klondike = Klondike::new();
         // Can't move cards to the deck
         assert_eq!(
             klondike.move_cards(CardHolder::DECK, CardHolder::DECK, 1),
@@ -422,7 +426,7 @@ mod tests {
         number: u32,
         result: bool,
     ) {
-        let mut klondike = Klondike {
+        let mut klondike = KlondikeMockable {
             foundations,
             piles,
             deck,
@@ -477,7 +481,7 @@ mod tests {
 
     #[test]
     fn check_klondike_status() {
-        let klondike = new();
+        let klondike = Klondike::new();
         let status = klondike.get_status();
         assert_eq!(status.deck, klondike.deck.get_status());
 
