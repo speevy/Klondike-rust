@@ -6,7 +6,7 @@ use std::io::{self, BufRead};
 use ansi_term::Style;
 
 fn main() {
-    let mut klondike = TheKlondike::new();
+    let mut klondike = Klondike::new();
 
     let stdin = io::stdin();
     let mut iterator = stdin.lock().lines();
@@ -62,7 +62,7 @@ fn get_card_holder (str: Option<&str>) -> Option<CardHolder> {
     }
 }
 
-fn print_status (klondike: &TheKlondike) {
+fn print_status (klondike: &Klondike) {
     let status = klondike.get_status();
 
     println!("  P1    P2    P3    P4          D"); 
