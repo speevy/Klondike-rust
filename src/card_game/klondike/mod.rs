@@ -62,7 +62,7 @@ impl<T: CardMover> KlondikeMockable<T> {
         KlondikeMockable {
             piles,
             foundations,
-            deck: Box::new(Deck::init(&cards[card_idx..].to_vec())),
+            deck: Box::new(Deck::new(&cards[card_idx..].to_vec())),
             mover,
         }
     }
@@ -172,7 +172,7 @@ impl<T: CardMover> KlondikeMockable<T> {
     }
 }
 
-pub fn extract_two_mutable_elements<T>(
+fn extract_two_mutable_elements<T>(
     vector: &mut Vec<T>,
     first_idx: usize,
     second_idx: usize,
@@ -411,7 +411,7 @@ mod tests {
                 Foundation::new(generate_descending_alt_color_starting(1, 1)),
                 Foundation::new(generate_descending_alt_color_starting(2, 1)),
             ],
-            Box::new(Deck::init(&Vec::new())),
+            Box::new(Deck::new(&Vec::new())),
         )
     }
 

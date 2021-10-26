@@ -40,7 +40,7 @@ impl CardOrigin for Deck {
 impl Deck {
     ///Creates a deck containing the given cards. One of the cards goes to
     ///the waste, the others to the pile.
-    pub fn init(cards: &Vec<Card>) -> Deck {
+    pub fn new(cards: &Vec<Card>) -> Deck {
         let mut deck = Deck {
             stock: cards.to_vec(),
             waste: Vec::new(),
@@ -200,7 +200,7 @@ mod tests {
             },
         ];
 
-        let deck = Deck::init(&cards);
+        let deck = Deck::new(&cards);
 
         assert_eq!(deck.stock.len(), 5);
         assert_eq!(deck.waste.len(), 1);
