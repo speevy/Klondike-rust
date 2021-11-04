@@ -170,6 +170,17 @@ impl<T: CardMover> KlondikeMockable<T> {
                 .map(|x| -> FoundationStatus {return x.get_status();}).collect()
         }
     }
+
+    /// Move the top card of the given origin to the corresponding pile 
+    /// (the first empty one in case is an Ace). return true if success
+    pub fn to_pile(&mut self, origin: CardHolder) -> bool {
+        for i in 0..self.piles.len() {
+            if self.move_cards(origin, CardHolder::PILE(i as u32), 1) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 fn extract_two_mutable_elements<T>(
@@ -478,6 +489,120 @@ mod tests {
         }
     }
 
+    #[test]
+    fn send_card_to_pile() {
+        let (piles, foundations, deck) = prepare_card_movement_test();
+        let origin_str = format!("{:p}", &*deck);
+        let destination_str = format!("{:p}", &piles[1]);
+        check_card_to_pile(
+            piles,
+            foundations,
+            deck,
+            origin_str,
+            destination_str,
+            CardHolder::DECK,
+            true
+        );
+ 
+        let (piles, foundations, deck) = prepare_card_movement_test();
+        let origin_str = format!("{:p}", &*deck);
+        let destination_str = format!("{:p}", &piles[2]);
+        check_card_to_pile(
+            piles,
+            foundations,
+            deck,
+            origin_str,
+            destination_str,
+            CardHolder::DECK,
+            false
+        );
+
+        let (piles, foundations, deck) = prepare_card_movement_test();
+        let origin_str = format!("{:p}", &foundations[0]);
+        let destination_str = format!("{:p}", &piles[0]);
+        check_card_to_pile(
+            piles,
+            foundations,
+            deck,
+            origin_str,
+            destination_str,
+            CardHolder::FOUNDATION(0),
+            true
+        );
+
+        let (piles, foundations, deck) = prepare_card_movement_test();
+        let origin_str = format!("{:p}", &foundations[2]);
+        let destination_str = format!("{:p}", &piles[1]);
+        check_card_to_pile(
+            piles,
+            foundations,
+            deck,
+            origin_str,
+            destination_str,
+            CardHolder::FOUNDATION(2),
+            true
+        );
+    }
+
+    fn check_card_to_pile(
+        piles: Vec<Pile>,
+        foundations: Vec<Foundation>,
+        deck: Box<Deck>,
+        origin_str: String,
+        destination_str: String,
+        origin: CardHolder,
+        result: bool,
+    ) {
+        let mut klondike = KlondikeMockable {
+            foundations,
+            piles,
+            deck,
+            mover: TestPileCardMover::new(origin_str, destination_str, result),
+        };
+
+        let res = klondike.to_pile(origin);
+        assert_eq!(res, result);
+        assert_eq!(klondike.mover.success_count, 1);
+    }
+
+    struct TestPileCardMover {
+        origin: String,
+        destination: String,
+        success_count: u32,
+        result: bool
+    }
+
+    impl CardMover for TestPileCardMover {
+        fn move_cards(
+            &mut self,
+            origin: &mut dyn CardOrigin,
+            destination: &mut dyn CardDestination,
+            number: usize,
+        ) -> bool {
+            assert_eq!(format!("{:p}", origin), self.origin);
+            assert_eq!(1, number);
+            if format!("{:p}", destination) != self.destination {
+                return false;
+            }
+            self.success_count = self.success_count + 1;
+            return self.result;
+        }
+    }
+
+    impl TestPileCardMover {
+        pub fn new(
+            origin: String,
+            destination: String,
+            result: bool
+        ) -> TestPileCardMover {
+            TestPileCardMover {
+                origin,
+                destination,
+                result,
+                success_count: 0,
+            }
+        }
+    }
 
     #[test]
     fn check_klondike_status() {

@@ -35,6 +35,11 @@ fn main() {
                         }
                     }
                 }
+                "p" | "P" => {
+                    if let Some(origin) = get_card_holder(part.next()) {
+                        klondike.to_pile(origin);
+                    }
+                }
                 _ =>{}
             } 
         }
@@ -93,11 +98,11 @@ fn print_status (klondike: &Klondike) {
 
     let style = Style::new().bold();
     println!(
-        "Commands: {}: Exit {}: Take from stock {}: move cards",
+        "Commands: {}: Exit {}: Take from stock {}: move cards {}: move cards to pile",
         style.paint("X"),
         style.paint("T"),
         style.paint("M <origin> <destination> [number of cards]"),
-
+        style.paint("P <origin>"),
         ); 
     println!("");
 
