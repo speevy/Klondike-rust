@@ -40,6 +40,7 @@ fn main() {
                         klondike.to_pile(origin);
                     }
                 }
+                "u" | "U" => klondike.undo(),
                 _ =>{}
             } 
         }
@@ -98,11 +99,12 @@ fn print_status (klondike: &Klondike) {
 
     let style = Style::new().bold();
     println!(
-        "Commands: {}: Exit {}: Take from stock {}: move cards {}: move cards to pile",
+        "Commands: {}: Exit {}: Take from stock {}: move cards {}: move cards to pile {}: Undo",
         style.paint("X"),
         style.paint("T"),
         style.paint("M <origin> <destination> [number of cards]"),
         style.paint("P <origin>"),
+        style.paint("U"),
         ); 
     println!("");
 

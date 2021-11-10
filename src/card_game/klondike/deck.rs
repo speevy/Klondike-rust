@@ -5,6 +5,7 @@ use crate::card_game::card_containers::*;
 pub struct Deck {
     stock: Vec<Card>,
     waste: Vec<Card>,
+    take_caused_flip: Vec<bool>
 }
 
 /// Value object used by UI for representing the status of a Deck
@@ -12,7 +13,7 @@ pub struct Deck {
 pub struct DeckStatus {
     pub cards_on_waste: u32,
     pub cards_on_stock: u32,
-    pub top_card_on_waste: Option<Card>
+    pub top_card_on_waste: Option<Card>,
 }
 
 impl CardOrigin for Deck {
@@ -35,6 +36,12 @@ impl CardOrigin for Deck {
         }
         return None;
     }
+
+    fn undo_peek(&mut self, cards: &Vec<Card>) {
+        if cards.len() == 1 {
+            self.waste.push(cards[0]);
+        }
+    }
 }
 
 impl Deck {
@@ -44,6 +51,7 @@ impl Deck {
         let mut deck = Deck {
             stock: cards.to_vec(),
             waste: Vec::new(),
+            take_caused_flip: Vec::new(),
         };
 
         deck.take();
@@ -57,6 +65,9 @@ impl Deck {
         if self.stock.is_empty() && !self.waste.is_empty() {
             self.waste.reverse();
             self.stock.append(&mut self.waste);
+            self.take_caused_flip.push(true);
+        } else {
+            self.take_caused_flip.push(false);
         }
 
         match self.stock.pop() {
@@ -76,8 +87,22 @@ impl Deck {
         DeckStatus {
             cards_on_waste: self.waste.len() as u32,
             cards_on_stock: self.stock.len() as u32,
-            top_card_on_waste
+            top_card_on_waste,
         }
+    }
+
+    pub fn undo_take(&mut self) {
+
+        if let Some(card) = self.waste.pop() {
+            self.stock.push(card);
+        }
+
+        let flipped = self.take_caused_flip.pop().unwrap_or(false);
+        if  flipped && self.waste.is_empty() && !self.stock.is_empty() {
+            self.stock.reverse();
+            self.waste.append(&mut self.stock);
+        }
+
     }
 }
 
@@ -168,6 +193,7 @@ mod tests {
                     rank: CardRank::THREE,
                 },
             ],
+            take_caused_flip: Vec::new(),
         }
     }
 
@@ -256,6 +282,7 @@ mod tests {
         let mut deck = Deck {
             stock: Vec::new(),
             waste: Vec::new(),
+            take_caused_flip: Vec::new(),
         };
         deck.take();
 
@@ -269,20 +296,26 @@ mod tests {
         let status = deck.get_status();
         assert_eq!(status.cards_on_stock, 3);
         assert_eq!(status.cards_on_waste, 3);
-        assert_eq!(status.top_card_on_waste, Some(Card {
-            suit: CardSuit::CLUBS,
-            rank: CardRank::THREE,
-        }));
+        assert_eq!(
+            status.top_card_on_waste,
+            Some(Card {
+                suit: CardSuit::CLUBS,
+                rank: CardRank::THREE,
+            })
+        );
 
         deck.waste.pop();
 
         let status = deck.get_status();
         assert_eq!(status.cards_on_stock, 3);
         assert_eq!(status.cards_on_waste, 2);
-        assert_eq!(status.top_card_on_waste, Some(Card {
-            suit: CardSuit::CLUBS,
-            rank: CardRank::TWO,
-        }));
+        assert_eq!(
+            status.top_card_on_waste,
+            Some(Card {
+                suit: CardSuit::CLUBS,
+                rank: CardRank::TWO,
+            })
+        );
 
         deck.waste.clear();
 
@@ -303,9 +336,97 @@ mod tests {
         let status = deck.get_status();
         assert_eq!(status.cards_on_stock, 0);
         assert_eq!(status.cards_on_waste, 3);
-        assert_eq!(status.top_card_on_waste, Some(Card {
-            suit: CardSuit::CLUBS,
-            rank: CardRank::THREE,
-        }));
+        assert_eq!(
+            status.top_card_on_waste,
+            Some(Card {
+                suit: CardSuit::CLUBS,
+                rank: CardRank::THREE,
+            })
+        );
+    }
+
+    #[test]
+    fn deck_undo_take() {
+        const NUMBER_OF_UNDOS:u32 = 10;
+        let mut deck = create_test_deck();
+        let mut history:Vec<DeckStatus> = Vec::new();
+
+        for _i in 0..NUMBER_OF_UNDOS {
+            history.push(deck.get_status());
+            deck.take();
+        }
+
+        for _i in 0..NUMBER_OF_UNDOS {
+            deck.undo_take();
+            assert_eq!(history.pop().unwrap(), deck.get_status())
+        }
+    }
+
+    #[test]
+    fn deck_undo_peek() {
+        const NUMBER_OF_UNDOS:u32 = 10;
+        let mut deck = create_test_deck();
+        let mut history_status:Vec<DeckStatus> = Vec::new();
+        let mut history_cards:Vec<Vec<Card>> = Vec::new();
+
+        for _i in 0..NUMBER_OF_UNDOS {
+            history_status.push(deck.get_status());
+            history_cards.push(deck.peek(1));
+        }
+
+        for _i in 0..NUMBER_OF_UNDOS {
+            deck.undo_peek(&history_cards.pop().unwrap());
+            assert_eq!(history_status.pop().unwrap(), deck.get_status())
+        }
+    }
+
+    #[test]
+    fn deck_undo_take_waste_empty() {
+        let mut deck = Deck {
+            stock: vec![
+                Card {
+                    suit: CardSuit::DIAMONDS,
+                    rank: CardRank::ACE,
+                },
+                Card {
+                    suit: CardSuit::DIAMONDS,
+                    rank: CardRank::TWO,
+                },
+                Card {
+                    suit: CardSuit::DIAMONDS,
+                    rank: CardRank::THREE,
+                },
+            ],
+            waste: vec![
+                Card {
+                    suit: CardSuit::CLUBS,
+                    rank: CardRank::ACE,
+                },
+            ],
+            take_caused_flip: Vec::new(),
+        };
+
+        let status0 = deck.get_status();
+        log_status(&status0);
+
+        let cards = deck.peek(1);
+        let status1 = deck.get_status();
+        log_status(&status1);
+
+        deck.take();
+        log_status(&deck.get_status());
+
+        deck.undo_take();
+        log_status(&deck.get_status());
+        assert_eq!(deck.get_status(), status1);
+
+        deck.undo_peek(&cards);
+        log_status(&deck.get_status());
+        assert_eq!(deck.get_status(), status0);
+
+    }
+
+    fn log_status(status: &DeckStatus) {
+        println!("Deck: (waste: {} stock: {} )", status.cards_on_waste, status.cards_on_stock);
     }
 }

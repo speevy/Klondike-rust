@@ -1,7 +1,9 @@
 use super::american_cards::*;
+use mockall::automock;
 
 /// Anything where cards can be taken of
-pub trait CardOrigin {
+#[automock]
+pub trait CardOrigin  {
     /// Try to peek an arbitrary number of cards. It should check the
     /// business logic for allowing this peek of cards. If everything
     /// is OK a vector containing the requested cards is returned, None
@@ -14,9 +16,12 @@ pub trait CardOrigin {
     /// one otherwise. The returned cards should be removed from the Card
     /// Origin.
     fn peek(&mut self, number: usize) -> Vec<Card>;
+
+    fn undo_peek(&mut self, cards: &Vec<Card>);
 }
 
 /// Anything where cards can be moved to
+#[automock]
 pub trait CardDestination {
     /// Try to poke an arbitrary number of cards. It should check the
     /// business logic for allowing this poke of cards. If everything
@@ -27,7 +32,10 @@ pub trait CardDestination {
     /// business logic for allowing this poke of cards. If everything
     /// is OK a the cards should be added to the Card Destination.
     fn poke(&mut self, cards: &Vec<Card>);
+
+    fn undo_poke(&mut self, number: usize) -> Vec<Card>;
 }
+
 
 pub trait CardMover {
     fn move_cards(
@@ -44,6 +52,15 @@ pub trait CardMover {
         }
 
         return false;
+    }
+
+    fn undo_move_cards(
+        &mut self,
+        origin: &mut dyn CardOrigin,
+        destination: &mut dyn CardDestination,
+        number: usize,
+    ) {
+        origin.undo_peek(&destination.undo_poke(number));
     }
 }
 
@@ -90,7 +107,6 @@ pub mod test_common {
         cards.shuffle(&mut rng);
         return cards[..size].to_vec();
     }
-    
     pub fn generate_descending_alt_color_starting(start: usize, size: usize) -> Vec<Card> {
         vec![
             Card {
@@ -132,48 +148,14 @@ pub mod test_common {
         ][start..start + size]
             .to_vec()
     }
-
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use super::test_common::*;
-    struct TestCardOrigin {
-        to_return: Option<Vec<Card>>,
-        peek_parameters: Vec<usize>,
-    }
+    use super::*;
+    use mockall::*;
 
-    impl CardOrigin for TestCardOrigin {
-        fn try_peek(&self, number: usize) -> Option<Vec<Card>> {
-            if let Some(cards) = &self.to_return {
-                if number <= cards.len() {
-                    return Some(cards[..number].to_vec());
-                }
-            }
-            None
-        }
-
-        fn peek(&mut self, number: usize) -> Vec<Card> {
-            self.peek_parameters.push(number);
-            self.try_peek(number).unwrap_or(Vec::new())
-        }
-    }
-
-    struct TestCardDestination {
-        to_return: bool,
-        poke_parameters: Vec<Vec<Card>>,
-    }
-
-    impl CardDestination for TestCardDestination {
-        fn try_poke(&self, _cards: &Vec<Card>) -> bool {
-            self.to_return
-        }
-
-        fn poke(&mut self, cards: &Vec<Card>) {
-            self.poke_parameters.push(cards.to_vec());
-        }
-    }
 
     #[test]
     fn card_mover() {
@@ -187,35 +169,77 @@ mod test {
 
     fn card_mover_check(ret_peek: bool, ret_poke: bool, number: usize, expected: bool) {
         let mut mover = SimpleCardMover {};
+
         let num_calls = match expected {
             true => 1,
             false => 0,
         };
+        
+        let cards = generate_random_card_set(number);
+        let try_peek_result = match ret_peek {
+            true => Some(cards.to_vec()),
+            false => None,
+        };
 
-        let mut origin = TestCardOrigin {
-            to_return: match ret_peek {
-                true => Some(generate_random_card_set(number)),
-                false => None,
-            },
-            peek_parameters: Vec::new(),
+        let peek_result = match ret_peek {
+            true => cards.to_vec(),
+            false => Vec::new(),
         };
-        let mut destination = TestCardDestination {
-            to_return: ret_poke,
-            poke_parameters: Vec::new(),
-        };
+
+        let mut origin = MockCardOrigin::new();
+        origin
+            .expect_try_peek()
+            .with(predicate::eq(number))
+            .return_once(move |_x| try_peek_result);
+        
+        origin
+        .expect_peek()
+        .with(predicate::eq(number))
+        .times(num_calls)
+        .return_once(move |_x| peek_result);
+
+        let mut destination = MockCardDestination::new();
+        destination
+            .expect_try_poke()
+            .with(predicate::eq(cards.to_vec()))
+            .return_once(move |_x| ret_poke);       
+
+        destination
+            .expect_poke()
+            .with(predicate::eq(cards.to_vec()))
+            .times(num_calls)
+            .return_once(|_x| ());    
 
         let result = mover.move_cards(&mut origin, &mut destination, number);
 
         assert_eq!(result, expected);
-        assert_eq!(origin.peek_parameters.len(), num_calls);
-        assert_eq!(destination.poke_parameters.len(), num_calls);
+    }
 
-        if expected {
-            assert_eq!(origin.peek_parameters[0], number);
-            if let Some(cards) = origin.to_return {
-                assert_eq!(destination.poke_parameters[0], cards);
-            }
+    #[test]
+    fn undo_card_mover() {
+        for i in 1..10 {
+            undo_card_mover_case(i);
         }
     }
 
+    fn undo_card_mover_case(number: usize) {
+        let mut mover = SimpleCardMover {};
+        let cards = generate_random_card_set(number);
+
+        let mut origin = MockCardOrigin::new();
+        origin
+            .expect_undo_peek()
+            .with(predicate::eq(cards.to_vec()))
+            .times(1)
+            .returning(|_x| ());
+
+        let mut destination = MockCardDestination::new();
+        destination
+            .expect_undo_poke()
+            .with(predicate::eq(number))
+            .times(1)
+            .return_once(|_x| cards);
+
+        mover.undo_move_cards(&mut origin, &mut destination, number);
+    }
 }

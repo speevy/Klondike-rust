@@ -49,6 +49,12 @@ impl CardOrigin for Pile {
         }
         return Vec::new();
     }
+
+    fn undo_peek(&mut self, cards: &Vec<Card>) {
+        if cards.len() == 1 {
+            self.cards.push(cards[0]);
+        }
+    }
 }
 
 impl CardDestination for Pile {
@@ -71,6 +77,19 @@ impl CardDestination for Pile {
             self.cards.push(cards[0]);
         }
     }
+
+    fn undo_poke(&mut self, number: usize) -> Vec<Card> {
+        let mut res: Vec<Card> = Vec::new();
+        
+        if number == 1 {
+            if let Some(card) = self.cards.pop() {
+                res.push(card);
+            }
+        }
+
+        res
+    }
+
 }
 
 #[cfg(test)]
@@ -246,4 +265,45 @@ mod tests {
         assert_eq!(status.num_cards, 0);
         assert_eq!(status.top_card, None);
     }
+
+    #[test]
+    fn pile_undo_peek() {
+        const NUMBER_OF_UNDOS:u32 = 10;
+        let mut pile = create_test_pile();
+        let mut history_status:Vec<PileStatus> = Vec::new();
+        let mut history_cards:Vec<Vec<Card>> = Vec::new();
+
+        for _i in 0..NUMBER_OF_UNDOS {
+            history_status.push(pile.get_status());
+            history_cards.push(pile.peek(1));
+        }
+
+        for _i in 0..NUMBER_OF_UNDOS {
+            pile.undo_peek(&history_cards.pop().unwrap());
+            assert_eq!(history_status.pop().unwrap(), pile.get_status())
+        }
+    }
+
+    #[test]
+    fn pile_undo_poke() {
+        let mut pile = Pile::new();
+        let first: Vec<Card> = vec![Card {suit:CardSuit::HEARTS, rank: CardRank::ACE}];
+        let second: Vec<Card> = vec![Card {suit:CardSuit::HEARTS, rank: CardRank::TWO}];
+        let third: Vec<Card> = vec![Card {suit:CardSuit::HEARTS, rank: CardRank::THREE}];
+
+        pile.poke(&first);
+        pile.poke(&second);
+        pile.poke(&third);
+
+        assert_eq!(pile.undo_poke(1), third);
+        assert_eq!(pile.cards.len(), 2);
+
+        assert_eq!(pile.undo_poke(1), second);
+        assert_eq!(pile.cards.len(), 1);
+
+        assert_eq!(pile.undo_poke(1), first);
+        assert_eq!(pile.cards.len(), 0);
+
+    }
+
 }

@@ -4,13 +4,14 @@ use crate::card_game::card_containers::*;
 pub struct Foundation {
     hidden: Vec<Card>,
     visible: Vec<Card>,
+    peek_caused_flip: Vec<bool>
 }
 
 /// Value object used by UI for representing the status of a Fountain
 #[derive(Debug, Clone, PartialEq)]
 pub struct FoundationStatus {
     pub num_hidden: u32,
-    pub visible: Vec<Card>
+    pub visible: Vec<Card>,
 }
 
 impl Foundation {
@@ -18,6 +19,7 @@ impl Foundation {
         Foundation {
             hidden: cards[..cards.len() - 1].to_vec(),
             visible: cards[cards.len() - 1..].to_vec(),
+            peek_caused_flip: Vec::new(),
         }
     }
 
@@ -26,9 +28,9 @@ impl Foundation {
     }
 
     pub fn get_status(&self) -> FoundationStatus {
-        FoundationStatus { 
+        FoundationStatus {
             num_hidden: self.hidden.len() as u32,
-            visible: self.visible[..].to_vec()
+            visible: self.visible[..].to_vec(),
         }
     }
 }
@@ -44,18 +46,29 @@ impl CardOrigin for Foundation {
     fn peek(&mut self, number: usize) -> Vec<Card> {
         if self.can_peek(number) {
             let res: Vec<Card> = self.visible.drain(self.visible.len() - number..).collect();
+
+            let mut flipped = false;
             if self.visible.is_empty() {
-                match self.hidden.pop() {
-                    Some(card) => {
-                        self.visible.push(card);
-                    }
-                    None => {}
+                if let Some(card) = self.hidden.pop() {
+                    self.visible.push(card);
+                    flipped = true;
                 }
             }
 
+            self.peek_caused_flip.push(flipped);
             return res;
         }
         return Vec::new();
+    }
+
+    fn undo_peek(&mut self, cards: &Vec<Card>) {
+        // If the peek we are undoing caused to show a hidden card, we have to
+        // hide it again
+        let flipped = self.peek_caused_flip.pop().unwrap_or(false);
+        if flipped && self.visible.len() == 1 && cards.len() > 0 {
+            self.hidden.push(self.visible.pop().unwrap());
+        }
+        self.visible.append(&mut cards.to_vec());
     }
 }
 
@@ -69,17 +82,9 @@ impl CardDestination for Foundation {
             return cards[0].rank == CardRank::KING;
         }
 
-        let last_card = self.visible[self.visible.len() - 1];
-
-        ((cards[0].rank as i32) + 1) == (last_card.rank as i32)
-            && match cards[0].suit {
-                CardSuit::DIAMONDS | CardSuit::HEARTS => {
-                    last_card.suit == CardSuit::CLUBS || last_card.suit == CardSuit::SPADES
-                }
-                CardSuit::CLUBS | CardSuit::SPADES => {
-                    last_card.suit == CardSuit::DIAMONDS || last_card.suit == CardSuit::HEARTS
-                }
-            }
+        Card::check_alternate_colors_and_descending_rank(
+            self.visible[self.visible.len() - 1], 
+            cards[0])
     }
 
     fn poke(&mut self, cards: &Vec<Card>) {
@@ -87,6 +92,14 @@ impl CardDestination for Foundation {
             self.visible.append(&mut cards.to_vec());
         }
     }
+
+    fn undo_poke(&mut self, number: usize) -> Vec<Card> {
+        if self.visible.len() >= number {
+            return self.visible.drain(self.visible.len() - number..).collect();
+        }
+        Vec::new()
+    }
+
 }
 
 #[cfg(test)]
@@ -202,6 +215,7 @@ mod tests {
         Foundation {
             hidden: generate_random_card_set(hidden),
             visible: generate_descending_alt_color_starting(visible_start, visible_number),
+            peek_caused_flip: Vec::new(),
         }
     }
 
@@ -334,5 +348,60 @@ mod tests {
         assert_eq!(status.visible.len(), 0);
     }
 
+    #[test]
+    fn foundation_undo_peek() {
+        foundation_undo_peek_case(3, 1, 1);
+        foundation_undo_peek_case(3, 2, 1);
+        foundation_undo_peek_case(3, 2, 2);
+        foundation_undo_peek_case(1, 1, 1);
+        foundation_undo_peek_case(0, 1, 1);
+        foundation_undo_peek_case(0, 2, 1);
+        foundation_undo_peek_case(0, 2, 2);
+    }
 
+    fn foundation_undo_peek_case(hidden: usize, visible: usize, peek: usize) {
+        let mut found = create_test_foundation(hidden, 0, visible);
+        let status = found.get_status();
+        let cards = found.peek(peek);
+
+        found.undo_peek(&cards);
+
+        assert_eq!(status, found.get_status());
+    }
+
+    #[test]
+    fn foundation_undo_poke() {
+        foundation_undo_poke_case(0, 1, 1);
+        foundation_undo_poke_case(0, 2, 1);
+        foundation_undo_poke_case(0, 1, 2);
+        foundation_undo_poke_case(1, 1, 1);
+        foundation_undo_poke_case(2, 2, 2);
+    }
+
+    fn foundation_undo_poke_case(visible_start: usize, visible_size: usize, to_add: usize) {
+        let mut foun = create_test_foundation(1, visible_start, visible_size);
+        let cards = generate_descending_alt_color_starting(visible_start + visible_size, to_add);
+
+        let status = foun.get_status();
+        foun.poke(&cards);
+
+        assert_eq!(foun.undo_poke(cards.len()), cards);
+        assert_eq!(foun.get_status(), status);
+    }
+
+    #[test]
+    fn foundation_undo_peek_unhidden() {
+
+        let visible = vec![Card {rank:CardRank::SEVEN, suit: CardSuit::CLUBS}];
+        let hidden = vec![Card {rank:CardRank::EIGHT, suit: CardSuit::HEARTS}];
+
+        let mut found = Foundation { visible, hidden, peek_caused_flip: Vec::new() };
+
+        let status = found.get_status();
+
+        let cards = found.peek(1);
+        found.undo_peek(&cards);
+
+        assert_eq! (found.get_status(), status);
+    }
 }

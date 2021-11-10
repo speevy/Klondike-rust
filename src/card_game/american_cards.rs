@@ -1,6 +1,6 @@
-use strum_macros::EnumIter;
-use std::fmt;
 use ansi_term::Colour::*;
+use std::fmt;
+use strum_macros::EnumIter;
 
 #[derive(Debug, EnumIter, Copy, Clone, PartialEq)]
 pub enum CardSuit {
@@ -62,8 +62,54 @@ impl fmt::Display for Card {
 
         let colored = match self.suit {
             CardSuit::DIAMONDS | CardSuit::HEARTS => Red.paint(str),
-            CardSuit::SPADES | CardSuit::CLUBS =>  Blue.paint(str),
+            CardSuit::SPADES | CardSuit::CLUBS => Blue.paint(str),
         };
         write!(f, "{}", colored)
+    }
+}
+
+impl Card {
+
+    pub fn check_alternate_colors_and_descending_rank(first: Card, second: Card) -> bool {
+        ((second.rank as i32) + 1) == (first.rank as i32)
+            && match second.suit {
+                CardSuit::DIAMONDS | CardSuit::HEARTS => {
+                    first.suit == CardSuit::CLUBS || first.suit == CardSuit::SPADES
+                }
+                CardSuit::CLUBS | CardSuit::SPADES => {
+                    first.suit == CardSuit::DIAMONDS || first.suit == CardSuit::HEARTS
+                }
+            }
+
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn card_alternating_check() {
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::CLUBS, CardRank::FOUR, true);
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::HEARTS, CardRank::FOUR, false);
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::SPADES, CardRank::FOUR, true);
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::DIAMONDS, CardRank::FOUR, false);
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::CLUBS, CardRank::THREE, false);
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::HEARTS, CardRank::THREE, false);
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::SPADES, CardRank::THREE, false);
+        card_alternating_check_case(CardSuit::DIAMONDS, CardRank::FIVE, CardSuit::DIAMONDS, CardRank::THREE, false);
+    }
+
+    fn card_alternating_check_case (
+        first_suit: CardSuit,
+        first_rank: CardRank,
+        second_suit: CardSuit,
+        second_rank: CardRank,
+        result: bool
+    ) {
+        assert_eq! (
+            Card::check_alternate_colors_and_descending_rank(
+                Card {suit:first_suit, rank: first_rank}, 
+                Card {suit:second_suit, rank: second_rank})
+            , result);
     }
 }

@@ -18,11 +18,17 @@ pub enum CardHolder {
     FOUNDATION(u32),
 }
 
+enum KlondikeAction {
+    MOVE(CardHolder, CardHolder, u32),
+    TAKE
+}
+
 pub struct KlondikeMockable<T: CardMover> {
     deck: Box<Deck>,
     piles: Vec<Pile>,
     foundations: Vec<Foundation>,
     mover: T,
+    history: Vec<KlondikeAction>,
 }
 
 pub type Klondike = KlondikeMockable<SimpleCardMover>;
@@ -39,6 +45,17 @@ pub struct KlondikeStatus {
     pub deck: DeckStatus,
     pub piles: Vec<PileStatus>,
     pub foundations: Vec<FoundationStatus>
+}
+
+macro_rules! exec_move_cards {
+    ($obj: expr, $origin: expr, $destination: expr, $number: expr, $is_undo: expr) => {
+        if $is_undo {
+            $obj.mover.undo_move_cards($origin, $destination, $number as usize);
+            true
+        } else {
+           $obj.mover.move_cards($origin, $destination, $number as usize)
+        }        
+    };
 }
 
 impl<T: CardMover> KlondikeMockable<T> {
@@ -64,6 +81,7 @@ impl<T: CardMover> KlondikeMockable<T> {
             foundations,
             deck: Box::new(Deck::new(&cards[card_idx..].to_vec())),
             mover,
+            history: Vec::new()
         }
     }
 
@@ -83,6 +101,14 @@ impl<T: CardMover> KlondikeMockable<T> {
     }
 
     pub fn move_cards(&mut self, origin: CardHolder, destination: CardHolder, number: u32) -> bool {
+        if self.do_move_cards(origin, destination, number, false) {
+            self.history.push(KlondikeAction::MOVE(origin, destination, number));
+            return true;
+        }
+        false
+    }
+
+    fn do_move_cards(&mut self, origin: CardHolder, destination: CardHolder, number: u32, is_undo: bool) -> bool {
         match destination {
             CardHolder::FOUNDATION(dest_idx) => match origin {
                 CardHolder::FOUNDATION(origin_idx) => {
@@ -100,30 +126,29 @@ impl<T: CardMover> KlondikeMockable<T> {
                         origin_idx as usize,
                         dest_idx as usize,
                     );
-
-                    return self.mover.move_cards(origin, destination, number as usize);
+                    return exec_move_cards!(self, origin, destination, number, is_undo);
                 }
                 CardHolder::PILE(origin_idx) => {
-                    return self.mover.move_cards(
+                    return exec_move_cards!(self,
                         &mut self.piles[origin_idx as usize],
                         &mut self.foundations[dest_idx as usize],
-                        number as usize,
+                        number, is_undo
                     );
                 }
                 CardHolder::DECK => {
-                    return self.mover.move_cards(
+                    return exec_move_cards!(self,
                         &mut *self.deck,
                         &mut self.foundations[dest_idx as usize],
-                        number as usize,
+                        number, is_undo
                     );
                 }
             },
             CardHolder::PILE(dest_idx) => match origin {
                 CardHolder::FOUNDATION(origin_idx) => {
-                    return self.mover.move_cards(
+                    return exec_move_cards!(self,
                         &mut self.foundations[origin_idx as usize],
                         &mut self.piles[dest_idx as usize],
-                        number as usize,
+                        number, is_undo
                     );
                 }
                 CardHolder::PILE(origin_idx) => {
@@ -141,13 +166,13 @@ impl<T: CardMover> KlondikeMockable<T> {
                         origin_idx as usize,
                         dest_idx as usize,
                     );
-                    return self.mover.move_cards(origin, destination, number as usize);
+                    return exec_move_cards!(self,origin, destination, number, is_undo);
                 }
                 CardHolder::DECK => {
-                    return self.mover.move_cards(
+                    return exec_move_cards!(self,
                         &mut *self.deck,
                         &mut self.piles[dest_idx as usize],
-                        number as usize,
+                        number, is_undo
                     );
                 }
             },
@@ -159,6 +184,7 @@ impl<T: CardMover> KlondikeMockable<T> {
 
     pub fn take(&mut self) {
         (*(self.deck)).take();
+        self.history.push(KlondikeAction::TAKE);
     }
 
     pub fn get_status(&self) -> KlondikeStatus {
@@ -180,6 +206,19 @@ impl<T: CardMover> KlondikeMockable<T> {
             }
         }
         false
+    }
+
+    pub fn undo(&mut self) {
+        if let Some(action) = self.history.pop() {
+            match action {
+                KlondikeAction::MOVE(origin, destination, number) => {
+                    self.do_move_cards(origin, destination, number, true);
+                },
+                KlondikeAction::TAKE => {
+                    self.deck.undo_take();
+                }
+            }
+        }
     }
 }
 
@@ -442,6 +481,7 @@ mod tests {
             piles,
             deck,
             mover: TestCardMover::new(number as usize, result, origin_str, destination_str),
+            history: Vec::new(),
         };
 
         let res = klondike.move_cards(origin, destination, number);
@@ -558,6 +598,7 @@ mod tests {
             piles,
             deck,
             mover: TestPileCardMover::new(origin_str, destination_str, result),
+            history: Vec::new()
         };
 
         let res = klondike.to_pile(origin);
@@ -623,5 +664,196 @@ mod tests {
                 klondike.piles[i].get_status()
             );
         }
+    }
+
+    use rand::distributions::{Distribution, Uniform};
+    use mockall::*;
+    use mockall::predicate::*;
+
+    #[automock]
+    trait CardMoverWrapper {
+        fn move_cards(
+            &mut self,
+            origin: String,
+            destination: String,
+            number: usize,
+        ) -> bool ;
+    
+        fn undo_move_cards(
+            &mut self,
+            origin: String,
+            destination: String,
+            number: usize,
+        );
+    }
+
+    struct MockableCardMover <T: CardMoverWrapper> {
+        wrapper: T 
+    }
+
+    impl<T: CardMoverWrapper> CardMover for MockableCardMover<T> {
+        fn move_cards(
+            &mut self,
+            origin: &mut dyn CardOrigin,
+            destination: &mut dyn CardDestination,
+            number: usize,
+        ) -> bool {
+            let origin_str = format!("{:p}", origin);
+            let destination_str = format!("{:p}", destination);
+            print!("Move cards {} -> {} {}", origin_str, destination_str, number);
+            let res = self.wrapper.move_cards(origin_str, destination_str, number);
+            println!(" returned {}", res);
+            res
+        }
+    
+        fn undo_move_cards(
+            &mut self,
+            origin: &mut dyn CardOrigin,
+            destination: &mut dyn CardDestination,
+            number: usize,
+        ) {
+            let origin_str = format!("{:p}", origin);
+            let destination_str = format!("{:p}", destination);
+            println!("Undo Move cards {} -> {} {}", origin_str, destination_str, number);
+            self.wrapper.undo_move_cards(origin_str, destination_str, number);
+        }
+    
+    }
+
+    /// Generates a random sequence of movements, and undoes them.
+    /// If the number of moved cards is 5 or grater, the mover mock 
+    /// returns false, simulating an invalid movement, so those movements
+    /// should not be undone.
+    #[test]
+    fn klondike_undo_move() {
+        let num_movements = 20;
+        let mut mover_wrapper = MockCardMoverWrapper::new();
+        mover_wrapper.expect_move_cards().returning(|_x, _y, number| number < 5);
+        let (piles, foundations, deck) = prepare_card_movement_test();
+
+        let mut movements: Vec<(CardHolder, CardHolder, usize)> = Vec::new();
+
+        let mut rng_origin = rand::thread_rng();
+        let dist_origin = Uniform::from(0..7);
+
+        let mut rng_destination = rand::thread_rng();
+        let dist_destination = Uniform::from(0..6);
+
+        let mut rng_number = rand::thread_rng();
+        let dist_number = Uniform::from(1..7);
+        
+        let mut seq = Sequence::new();
+
+        println!("Deck: {:p}", &*deck);
+
+        for _i in 1..num_movements {
+            let origin_idx = dist_origin.sample(&mut rng_origin);
+            let mut destination_idx = dist_destination.sample(&mut rng_destination);
+            while destination_idx == origin_idx {
+                destination_idx = dist_destination.sample(&mut rng_destination);
+            }
+
+            let (origin_str, origin_ch) = get_cardholder_ptr(&piles, &foundations, &deck, origin_idx);
+            let (destination_str, destination_ch) = get_cardholder_ptr(&piles, &foundations, &deck, destination_idx);
+
+            let number = dist_number.sample(&mut rng_number) as usize;
+
+            println!("Prepare Move cards {} -> {} {}", origin_str, destination_str, number);
+
+            movements.push((
+                origin_ch, 
+                destination_ch, 
+                number
+            ));
+
+            if number < 5 {
+                mover_wrapper.expect_undo_move_cards()
+                    .with(eq(origin_str), eq(destination_str), eq(number as usize))
+                    .times(1)
+                    .in_sequence(&mut seq)
+                    .returning(|_x, _y, _z| ());
+            }
+        }
+
+        let mover = MockableCardMover {wrapper: mover_wrapper};
+        let mut klondike = KlondikeMockable {
+            deck,
+            piles,
+            foundations,
+            mover,
+            history: Vec::new(),
+        };
+
+        movements.reverse();
+
+        for (origin, destination, number) in movements {
+            klondike.move_cards(origin, destination, number as u32);
+        }
+
+        for _i in 1..20 {
+            klondike.undo();
+        }
+    }
+
+    fn get_cardholder_ptr (piles: &Vec<Pile>, foundations: &Vec<Foundation>, deck: &Box<Deck>, number: u32) -> (String, CardHolder) {
+        match number {
+            0..=2 => (format!("{:p}", &piles[number as usize]), CardHolder::PILE(number)),
+            3..=5 => (format!("{:p}", &foundations[(number-3) as usize]), CardHolder::FOUNDATION(number - 3)),
+            _ => (format!("{:p}", &**deck), CardHolder::DECK)
+        }
+    }
+
+    #[test]
+    fn klondike_undo_take() {
+        let mut klondike = Klondike::new();
+        let mut status_history: Vec<KlondikeStatus> = Vec::new();
+
+        let status = klondike.get_status();
+        log_status(&status);
+        status_history.push(status);
+
+        for i in 0..klondike.foundations.len() {
+            if klondike.to_pile(CardHolder::FOUNDATION(i as u32)) {
+                let status = klondike.get_status();
+                log_status(&status);
+                status_history.push(status);
+            }
+        }
+
+        for _i in 0..30 {
+            if klondike.to_pile(CardHolder::DECK) {
+                let status = klondike.get_status();
+                log_status(&status);
+                status_history.push(status);    
+            }
+            
+            klondike.take();
+            let status = klondike.get_status();
+            log_status(&status);
+            status_history.push(status);
+        }
+
+        println!("------- Undoing ---------");
+
+        status_history.pop();
+
+        while let Some(expected_status) = status_history.pop() {
+            klondike.undo();
+            let status = klondike.get_status();
+            log_status(&status);
+            assert_eq!(status, expected_status);
+        }
+    }
+
+    fn log_status(status: &KlondikeStatus) {
+        print!("Deck: (waste: {} stock: {} ) Piles:", status.deck.cards_on_waste, status.deck.cards_on_stock);
+        for i in &status.piles {
+            print!(" {}", i.num_cards);
+        }
+        print!(" Found:");
+        for i in &status.foundations {
+            print!(" (hid: {}, vis: {})", i.num_hidden, i.visible.len());
+        }
+        println!("");
     }
 }
