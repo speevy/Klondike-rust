@@ -64,6 +64,7 @@ impl fmt::Display for Card {
             CardSuit::DIAMONDS | CardSuit::HEARTS => Red.paint(str),
             CardSuit::SPADES | CardSuit::CLUBS => Blue.paint(str),
         };
+
         write!(f, "{}", colored)
     }
 }

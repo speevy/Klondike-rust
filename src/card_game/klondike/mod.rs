@@ -1,6 +1,7 @@
 pub mod deck;
 pub mod pile;
 pub mod foundation;
+pub mod ui;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
