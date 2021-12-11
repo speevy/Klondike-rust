@@ -12,3 +12,9 @@ rand = "0.8.4"
 json = "0.12.4"
 ansi_term = "0.12.1"
 mockall = "0.10.2"
+rocket = {version ="0.5.0-rc.1", features=["json"]}
+uuid = { version = "0.8.2", features = ["serde", "v4"] }
+lazy_static = "1.4.0"
+serde = "1.0.117"
+serde_derive = "1.0.130"
+serde_json = "1.0"

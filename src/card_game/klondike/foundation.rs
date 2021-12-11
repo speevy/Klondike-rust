@@ -1,5 +1,6 @@
 use crate::card_game::american_cards::*;
 use crate::card_game::card_containers::*;
+use serde::Serialize;
 
 pub struct Foundation {
     hidden: Vec<Card>,
@@ -8,7 +9,7 @@ pub struct Foundation {
 }
 
 /// Value object used by UI for representing the status of a Fountain
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FoundationStatus {
     pub num_hidden: u32,
     pub visible: Vec<Card>,

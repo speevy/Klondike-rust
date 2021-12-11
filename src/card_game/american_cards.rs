@@ -1,8 +1,9 @@
 use ansi_term::Colour::*;
 use std::fmt;
 use strum_macros::EnumIter;
+use serde::Serialize;
 
-#[derive(Debug, EnumIter, Copy, Clone, PartialEq)]
+#[derive(Debug, EnumIter, Copy, Clone, PartialEq, Serialize)]
 pub enum CardSuit {
     CLUBS,
     DIAMONDS,
@@ -10,7 +11,7 @@ pub enum CardSuit {
     SPADES,
 }
 
-#[derive(Debug, EnumIter, Copy, Clone, PartialEq)]
+#[derive(Debug, EnumIter, Copy, Clone, PartialEq, Serialize)]
 pub enum CardRank {
     ACE = 1,
     TWO,
@@ -27,7 +28,7 @@ pub enum CardRank {
     KING,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize)]
 pub struct Card {
     pub suit: CardSuit,
     pub rank: CardRank,

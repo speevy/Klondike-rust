@@ -1,5 +1,7 @@
 use crate::card_game::american_cards::*;
 use crate::card_game::card_containers::*;
+use serde::Serialize;
+
 /// The deck of the game, consisting in two piles: the stock and the waste.
 /// The waste also acts as a CardOrigin.
 pub struct Deck {
@@ -9,7 +11,7 @@ pub struct Deck {
 }
 
 /// Value object used by UI for representing the status of a Deck
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize)]
 pub struct DeckStatus {
     pub cards_on_waste: u32,
     pub cards_on_stock: u32,

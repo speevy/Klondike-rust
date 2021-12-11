@@ -11,8 +11,9 @@ use crate::card_game::card_containers::*;
 use deck::*;
 use pile::*;
 use foundation::*;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CardHolder {
     DECK,
     PILE(u32),
@@ -41,7 +42,7 @@ impl Klondike {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct KlondikeStatus {
     pub deck: DeckStatus,
     pub piles: Vec<PileStatus>,

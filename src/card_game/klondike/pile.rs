@@ -1,12 +1,13 @@
 use crate::card_game::american_cards::*;
 use crate::card_game::card_containers::*;
+use serde::Serialize;
 
 pub struct Pile {
     cards: Vec<Card>,
 }
 
 /// Value object used by UI for representing the status of a Pile
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize)]
 pub struct PileStatus {
     pub top_card: Option<Card>,
     pub num_cards: u32
