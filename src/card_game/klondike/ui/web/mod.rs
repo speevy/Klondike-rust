@@ -10,8 +10,16 @@ use rocket::serde::json::Json;
 use crate::card_game::klondike::ui::get_card_holder;
 use serde::{Serialize, Deserialize};
 
+use clokwerk::{Scheduler, TimeUnits};
+use std::time::{Duration, Instant};
+
 struct KlondikeGames {
-    games: Mutex<HashMap<String, Klondike>>
+    games: &'static Mutex<GameInfo>,
+}
+
+struct GameInfo {
+    games: HashMap<String, Klondike>,
+    last_access: HashMap<String, Instant>,
 }
 
 #[derive(Deserialize)]
@@ -38,10 +46,12 @@ impl Created<()> {
 #[post("/game")]
 fn new_game(shared: &State<KlondikeGames>) -> Created<()> {
     let my_uuid = Uuid::new_v4();
+    let uuid = format!("{}", my_uuid);
     let mut state = shared.games.lock().expect("lock shared data");
-    state.insert(format!("{}", my_uuid), Klondike::new());
+    state.games.insert(uuid.clone(), Klondike::new());
+    state.last_access.insert(uuid.clone(), Instant::now());
 
-    return Created::new(format!("/klondike/game/{}", my_uuid));
+    return Created::new(format!("/klondike/game/{}", uuid));
 }
 
 #[get("/game/<uuid>")]
@@ -82,7 +92,9 @@ fn execute_action(uuid: String, action: Json<Action>, shared: &State<KlondikeGam
 fn delete(uuid: String, shared: &State<KlondikeGames>) -> Status {
     let mut state = shared.games.lock().expect("lock shared data");
     
-    match state.remove(&uuid) {
+    state.last_access.remove(&uuid);
+
+    match state.games.remove(&uuid) {
         Some(_x) => Status::Ok,
         None => Status::NotFound
     }
@@ -94,9 +106,12 @@ fn execute<F: Fn(&mut Klondike) -> Status>(
             task: F) -> ApiResponse<Option<KlondikeStatus>> {
 
     let mut state = shared.games.lock().expect("lock shared data");
-    let klondike = state.get_mut(&uuid);
 
-    if let Some(x) = klondike {
+    if let Some(_x) = state.last_access.get(&uuid) {
+        state.last_access.insert(uuid.clone(), Instant::now());
+    }
+
+    if let Some(x) = state.games.get_mut(&uuid) {
         let task_result = task(x);
         return ApiResponse { status: task_result, json: Json(Option::Some(x.get_status()))};
     }     
@@ -121,13 +136,40 @@ impl<'r, 'o: 'r, T: Serialize> Responder<'r, 'o> for ApiResponse<T> {
     }
 }
 
+fn cleanup (games: &Mutex<GameInfo>) {
+    let mut state = games.lock().expect("lock shared data");
+
+    let mut to_remove: Vec<String> = Vec::new();
+    for (uuid, instant) in state.last_access.iter() {
+        if instant.elapsed() > *CLEANUP_TIMEOUT {
+            to_remove.push(uuid.to_string());
+        }
+    }
+
+    println!("Cleanup: games: {} UUIDs to remove {:?}",
+        state.games.len(), &to_remove);
+
+    for uuid in to_remove {
+        state.games.remove(&uuid);
+        state.last_access.remove(&uuid);
+    }
+}
+
+lazy_static! {
+    static ref GAMES:Mutex<GameInfo> = Mutex::new(GameInfo {games: HashMap::new(), last_access: HashMap::new()});
+    static ref CLEANUP_TIMEOUT:Duration = Duration::from_secs(15 * 60); // 15 Minutes
+}
+
 #[rocket::main]
 pub async fn main_rocket() -> Result<(), Error> {
-    let state = KlondikeGames
- { games : Mutex::new(HashMap::new()) };
-    rocket::build()
+    let state = KlondikeGames { games : &*GAMES };
+    let rock = rocket::build()
         .mount("/klondike", routes![new_game, get_status, execute_action, delete])
-        .manage(state)
-        .launch()
-        .await
+        .manage(state);
+
+    let mut scheduler = Scheduler::new();
+    scheduler.every(10.seconds()).run (|| cleanup(&*GAMES));
+    let _thread_handle = scheduler.watch_thread(Duration::from_millis(100));
+
+    rock.launch().await
 }

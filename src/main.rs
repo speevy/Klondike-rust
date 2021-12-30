@@ -1,6 +1,7 @@
 pub mod card_game;
 
 #[macro_use] extern crate rocket;
+#[macro_use] extern crate lazy_static;
 
 use card_game::klondike::ui::*;
 use std::env;
