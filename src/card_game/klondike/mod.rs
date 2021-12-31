@@ -2,6 +2,7 @@ pub mod deck;
 pub mod pile;
 pub mod foundation;
 pub mod ui;
+pub mod storage;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -20,11 +21,13 @@ pub enum CardHolder {
     FOUNDATION(u32),
 }
 
+#[derive(Clone)]
 enum KlondikeAction {
     MOVE(CardHolder, CardHolder, u32),
     TAKE
 }
 
+#[derive(Clone)]
 pub struct KlondikeMockable<T: CardMover> {
     deck: Box<Deck>,
     piles: Vec<Pile>,

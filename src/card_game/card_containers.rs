@@ -64,6 +64,7 @@ pub trait CardMover {
     }
 }
 
+#[derive(Clone)]
 pub struct SimpleCardMover;
 impl CardMover for SimpleCardMover {}
 

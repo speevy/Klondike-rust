@@ -4,6 +4,7 @@ use serde::Serialize;
 
 /// The deck of the game, consisting in two piles: the stock and the waste.
 /// The waste also acts as a CardOrigin.
+#[derive(Clone)]
 pub struct Deck {
     stock: Vec<Card>,
     waste: Vec<Card>,
