@@ -21,13 +21,13 @@ pub enum CardHolder {
     FOUNDATION(u32),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum KlondikeAction {
     MOVE(CardHolder, CardHolder, u32),
     TAKE
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone,  PartialEq)]
 pub struct KlondikeMockable<T: CardMover> {
     deck: Box<Deck>,
     piles: Vec<Pile>,

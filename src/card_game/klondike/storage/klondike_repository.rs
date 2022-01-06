@@ -7,17 +7,17 @@ use super::super::Klondike;
 pub trait KlondikeRepository {
 
     /// Saves the current state and returns the created id for it
-    fn save(&self, klondike: Klondike) -> String;
+    fn save(&mut self, klondike: Klondike) -> String;
 
     /// Saves the current state of an already saved game
-    fn update(&self, id: String, klondike: Klondike);
+    fn update(&mut self, id: String, klondike: Klondike);
 
     /// Gets a saved game by it's id.
     fn get(&self, id: &String) -> Option<Klondike>;
 
     /// Removes a saved game from the repository by it's id.
     /// Returns the removed element
-    fn delete(&self, id: &String) -> Option<Klondike>;
+    fn delete(&mut self, id: &String) -> Option<Klondike>;
 
 }
 
@@ -26,7 +26,7 @@ pub mod test {
     use super::*;
 
     //    pub fn save_update_get<T: KlondikeRepository>(repo: &mut T) {
-    pub fn save_update_get(repo: &dyn KlondikeRepository) {
+    pub fn save_update_get(repo: &mut dyn KlondikeRepository) {
         
         let klondike1 = Klondike::new();
         let status1 = klondike1.get_status();
@@ -51,7 +51,7 @@ pub mod test {
         assert!(repo.get(&String::from("invalid id")).is_none());
     }
 
-    pub fn delete(repo: &dyn KlondikeRepository) {
+    pub fn delete(repo: &mut dyn KlondikeRepository) {
         let klondike1 = Klondike::new();
         let status1 = klondike1.get_status();
         let id1 = repo.save(klondike1.clone());

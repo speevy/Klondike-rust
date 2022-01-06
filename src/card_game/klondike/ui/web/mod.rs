@@ -1,25 +1,20 @@
-use uuid::Uuid;
-use std::collections::HashMap;
 use crate::card_game::klondike::*;
 use rocket::{State, Error, response};
 use rocket::response::{Responder, Response};
 use rocket::request::Request;
 use rocket::http::{ContentType, Header, Status};
-use std::sync::Mutex;
+use rocket::fairing::{Fairing, Info, Kind};
+use std::sync::{Mutex, Arc};
 use rocket::serde::json::Json;
 use crate::card_game::klondike::ui::get_card_holder;
 use serde::{Serialize, Deserialize};
-
-use clokwerk::{Scheduler, TimeUnits};
-use std::time::{Duration, Instant};
+use crate::card_game::klondike::storage::cleanup_wrapper::{HashMapTimeoutRepository, KlondikeCleanUpRepository};
+use crate::card_game::klondike::storage::hashmap_repository::KlondikeHashMapRepository;
+use crate::card_game::klondike::storage::klondike_repository::KlondikeRepository;
+use std::time::Duration;
 
 struct KlondikeGames {
-    games: &'static Mutex<GameInfo>,
-}
-
-struct GameInfo {
-    games: HashMap<String, Klondike>,
-    last_access: HashMap<String, Instant>,
+    repo: Arc<Mutex<dyn KlondikeRepository + Send + 'static>>,
 }
 
 #[derive(Deserialize)]
@@ -34,24 +29,26 @@ struct Action {
 #[response(status = 201)]
 struct Created<T> {
     inner: T,
-    header: Header<'static>
+    location: Header<'static>,
+    expose_location: Header<'static>,
 }
 
 impl Created<()> {
     fn new(url: String) -> Created<()> {
-        Created {header: Header::new("Location", url), inner: ()}
+        Created {
+            location: Header::new("Location", url), 
+            expose_location: Header::new("Access-Control-Expose-Headers", "Location"),
+            inner: ()
+        }
     }
 }
 
 #[post("/game")]
 fn new_game(shared: &State<KlondikeGames>) -> Created<()> {
-    let my_uuid = Uuid::new_v4();
-    let uuid = format!("{}", my_uuid);
-    let mut state = shared.games.lock().expect("lock shared data");
-    state.games.insert(uuid.clone(), Klondike::new());
-    state.last_access.insert(uuid.clone(), Instant::now());
+    let mut state = shared.repo.lock().unwrap();
+    let id = state.save(Klondike::new());
 
-    return Created::new(format!("/klondike/game/{}", uuid));
+    return Created::new(format!("/klondike/game/{}", id));
 }
 
 #[get("/game/<uuid>")]
@@ -88,31 +85,36 @@ fn execute_action(uuid: String, action: Json<Action>, shared: &State<KlondikeGam
     })
 }
 
-#[delete("/game/<uuid>")]
-fn delete(uuid: String, shared: &State<KlondikeGames>) -> Status {
-    let mut state = shared.games.lock().expect("lock shared data");
-    
-    state.last_access.remove(&uuid);
+#[delete("/game/<id>")]
+fn delete(id: String, shared: &State<KlondikeGames>) -> Status {
+    let mut repo = shared.repo.lock().unwrap();
 
-    match state.games.remove(&uuid) {
+    match repo.delete(&id) {
+        Some(_x) => Status::Ok,
+        None => Status::NotFound
+    }
+}
+
+#[options("/game/<id>")]
+fn options(id: String, shared: &State<KlondikeGames>) -> Status {
+    let repo = shared.repo.lock().unwrap();
+
+    match repo.get(&id) {
         Some(_x) => Status::Ok,
         None => Status::NotFound
     }
 }
 
 fn execute<F: Fn(&mut Klondike) -> Status>(
-            uuid: String, 
+            id: String, 
             shared: &State<KlondikeGames>, 
             task: F) -> ApiResponse<Option<KlondikeStatus>> {
 
-    let mut state = shared.games.lock().expect("lock shared data");
+    let mut repo = shared.repo.lock().unwrap();
 
-    if let Some(_x) = state.last_access.get(&uuid) {
-        state.last_access.insert(uuid.clone(), Instant::now());
-    }
-
-    if let Some(x) = state.games.get_mut(&uuid) {
+    if let Some(x) = repo.get(&id).as_mut() {
         let task_result = task(x);
+        repo.update(id, x.clone());
         return ApiResponse { status: task_result, json: Json(Option::Some(x.get_status()))};
     }     
     
@@ -136,40 +138,39 @@ impl<'r, 'o: 'r, T: Serialize> Responder<'r, 'o> for ApiResponse<T> {
     }
 }
 
-fn cleanup (games: &Mutex<GameInfo>) {
-    let mut state = games.lock().expect("lock shared data");
+pub struct CORS;
 
-    let mut to_remove: Vec<String> = Vec::new();
-    for (uuid, instant) in state.last_access.iter() {
-        if instant.elapsed() > *CLEANUP_TIMEOUT {
-            to_remove.push(uuid.to_string());
-        }
+#[rocket::async_trait]
+impl Fairing for CORS {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response
+       }
     }
 
-    println!("Cleanup: games: {} UUIDs to remove {:?}",
-        state.games.len(), &to_remove);
-
-    for uuid in to_remove {
-        state.games.remove(&uuid);
-        state.last_access.remove(&uuid);
+    async fn on_response<'r>(&self, _req: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Methods", "POST, GET, PUT, PATCH, OPTIONS, DELETE"));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
-}
-
-lazy_static! {
-    static ref GAMES:Mutex<GameInfo> = Mutex::new(GameInfo {games: HashMap::new(), last_access: HashMap::new()});
-    static ref CLEANUP_TIMEOUT:Duration = Duration::from_secs(15 * 60); // 15 Minutes
 }
 
 #[rocket::main]
 pub async fn main_rocket() -> Result<(), Error> {
-    let state = KlondikeGames { games : &*GAMES };
-    let rock = rocket::build()
-        .mount("/klondike", routes![new_game, get_status, execute_action, delete])
-        .manage(state);
+    //TODO: Make repository choices configurable
+    let repo = KlondikeHashMapRepository::new();
+    let repo = KlondikeCleanUpRepository::new(
+        repo, 
+        Duration::from_secs(15 * 60), // 15 Minutes
+        HashMapTimeoutRepository::new()
+    );
 
-    let mut scheduler = Scheduler::new();
-    scheduler.every(10.seconds()).run (|| cleanup(&*GAMES));
-    let _thread_handle = scheduler.watch_thread(Duration::from_millis(100));
+    let state = KlondikeGames { repo: Arc::new(Mutex::new(repo))};
 
-    rock.launch().await
+    rocket::build()
+        .attach(CORS)
+        .mount("/klondike", routes![new_game, get_status, execute_action, delete, options])
+        .manage(state).launch().await
 }

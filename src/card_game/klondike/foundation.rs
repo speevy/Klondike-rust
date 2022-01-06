@@ -2,7 +2,7 @@ use crate::card_game::american_cards::*;
 use crate::card_game::card_containers::*;
 use serde::Serialize;
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Foundation {
     hidden: Vec<Card>,
     visible: Vec<Card>,
