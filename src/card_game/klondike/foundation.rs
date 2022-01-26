@@ -9,13 +9,18 @@ pub struct Foundation {
     peek_caused_flip: Vec<bool>
 }
 
-/// Value object used by UI for representing the status of a Fountain
+/// Value object used by UI for representing the status of a Foundation
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FoundationStatus {
     pub num_hidden: u32,
     pub visible: Vec<Card>,
 }
 
+/// Each of the foundations of the game. Acts as a Card Origin an Card Destination.
+/// Multiple cards can be peek or poke at a time.
+/// When poking one or various cards, it has to alternate suit colors and 
+/// the next rank has to be the immediate previous value of the rank of the 
+/// preceding card. If the foundation is empty a KING of any suit is allowed.
 impl Foundation {
     pub fn new(cards: Vec<Card>) -> Foundation {
         Foundation {

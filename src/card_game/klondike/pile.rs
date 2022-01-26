@@ -2,6 +2,10 @@ use crate::card_game::american_cards::*;
 use crate::card_game::card_containers::*;
 use serde::Serialize;
 
+/// Each of the piles of the game. Acts as a Card Origin an Card Destination.
+/// Only one card can be peek or poke at a time.
+/// When poking a card, it has to be the same suit and the next rank of the 
+/// card at top of the pile. If the pile is empty an ACE of any suit is allowed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pile {
     cards: Vec<Card>,
